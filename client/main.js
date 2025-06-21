@@ -5,8 +5,12 @@ import { MainScene } from "./client";
 const config = {
     type: Phaser.AUTO,
     parent: "phaser-container",
-    width: 960,
-    height: 540,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    scale: {
+        mode: Phaser.Scale.RESIZE, // Automatically resize to fit the window
+        autoCenter: Phaser.Scale.CENTER_BOTH, // Center the canvas
+    },
     // backgroundColor: "#1c172e",
     pixelArt: false,
     roundPixel: false,
