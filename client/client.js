@@ -1,4 +1,5 @@
 import { Scene } from "phaser";
+import config from './config.js';
 
 export class MainScene extends Scene {
     constructor() {
@@ -20,7 +21,8 @@ export class MainScene extends Scene {
         this.fpsText.setScrollFactor(0);
         this.fpsText.setDepth(1000);
 
-        this.socket = new WebSocket(`ws://localhost:8080`);
+        // Use configuration for server connection
+        this.socket = new WebSocket(config.serverUrl);
         this.playerId;
         this.snakes = {};
         this.playerSnakeData;
