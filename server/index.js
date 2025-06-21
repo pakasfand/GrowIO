@@ -10,7 +10,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const PHYSICS_UPDATE_RATE = 1000 / 60; // 60 FPS
 const STATE_UPDATE_RATE = 1000 / 30; // 30 FPS
 const PICK_UP_SPAWN_RATE = 200;
-const PICK_UP_RADIUS = 10;
+const PICK_UP_RADIUS = 5;
 
 const app = express();
 const server = http.createServer(app);
@@ -23,8 +23,8 @@ app.use(express.static('public')); // Fallback for assets
 // World and game data
 const WORLD_SIZE = 5000;
 const SNAKE_SPEED = 5;
-const SNAKE_STARTING_RADIUS = 100;
-const MAX_PICKUP_COUNT = 10;
+const SNAKE_STARTING_RADIUS = 10;
+const MAX_PICKUP_COUNT = 100;
 
 const snakes = {};
 const pickUps = {};
@@ -34,12 +34,37 @@ physicsEngine.gravity.x = 0;
 physicsEngine.gravity.y = 0;
 
 wss.on('connection', (ws) => {
-    const id = uuidv4();
+    const snakeId = uuidv4();
+    snakes[snakeId] = initSnake(snakeId);
+
+    ws.send(JSON.stringify(
+    { 
+        type: 'init', 
+        playerId: snakeId,
+        allSnakeData: Object.fromEntries(Object.entries(snakes).map(([id, snake]) => [id, snake.data])),
+    }));
+
+    ws.on('message', (msg) => {
+        const snakeDataId = JSON.parse(msg);
+        if (snakeDataId.type === 'input') {
+            snakes[snakeDataId.id].data.targetX = snakeDataId.targetX;
+            snakes[snakeDataId.id].data.targetY = snakeDataId.targetY;
+        }
+    });
+
+    ws.on('close', () => {
+        delete snakes[snakeId];
+    });
+});
+
+function initSnake(snakeId)
+{
     const startX = WORLD_SIZE / 2 + Math.random() * 200 - 100;
     const startY = WORLD_SIZE / 2 + Math.random() * 200 - 100;
-    snakes[id] = {
+
+    const snake = {
         data: {
-            id: id,
+            id: snakeId,
             x: startX,
             y: startY,
             radius: SNAKE_STARTING_RADIUS,
@@ -50,40 +75,23 @@ wss.on('connection', (ws) => {
         }
     };
 
-    let snakeData = snakes[id].data;
-    snakes[id].physics = {
-        body: Matter.Bodies.circle(snakeData.x, snakeData.y, snakeData.radius, {
+    snake.physics = {
+        body: Matter.Bodies.circle(snake.data.x, snake.data.y, snake.data.radius, {
             label: 'snake',
             isSensor: false,
+            uuid: snakeId
         })  
     }
 
-    Matter.World.add(physicsEngine.world, snakes[id].physics.body);
+    console.log(`Snake spawned at X: ${snake.physics.body.position.x} Y: ${snake.physics.body.position.y}`)
 
-    ws.send(JSON.stringify(
-    { 
-        type: 'init', 
-        playerId: id,
-        allSnakeData: Object.fromEntries(Object.entries(snakes).map(([id, snake]) => [id, snake.data])),
-    }));
+    Matter.World.add(physicsEngine.world, snake.physics.body);
 
-    ws.on('message', (msg) => {
-        const data = JSON.parse(msg);
-        if (data.type === 'input') {
-            snakes[data.id].data.targetX = data.targetX;
-            snakes[data.id].data.targetY = data.targetY;
-        }
-    });
-
-    ws.on('close', () => {
-        delete snakes[id];
-    });
-});
+    return snake;
+}
 
 setInterval(() => {
-    // Broadcast game state
     broadcastStateUpdate();
-
 }, STATE_UPDATE_RATE);
 
 function broadcastStateUpdate() {
@@ -140,47 +148,84 @@ setInterval(() => {
 function spawnPickUp() {
     if (Object.keys(pickUps).length >= MAX_PICKUP_COUNT) return;
 
+    let pickUpId = uuidv4();
+    pickUps[pickUpId] = initPickUp(pickUpId);
+}
+
+function initPickUp(pickUpId)
+{
     const pickUp = {
         data: {
-            id: uuidv4(),
+            id: pickUpId,
             x: randPos(),
             y: randPos(),
             radius: PICK_UP_RADIUS,
             color: Math.random() * 0xffffff,       
         }
     }
-
+    
     pickUp.physics = {
         body: Matter.Bodies.circle(pickUp.data.x, pickUp.data.y, pickUp.data.radius, {
             label: 'pickup',
             isSensor: true,
+            uuid: pickUpId
         })
     }
     
     console.log(`Pick up spawned at X: ${pickUp.physics.body.position.x} Y: ${pickUp.physics.body.position.y}`)
-    pickUp.physics.body.uuid = pickUp.data.id;
-
-    Matter.World.add(physicsEngine.world, [pickUp.physics.body]);
     
-    pickUps[pickUp.data.id] = pickUp;
+    Matter.World.add(physicsEngine.world, [pickUp.physics.body]);
+
+    return pickUp;
 }
 
-Matter.Events.on(physicsEngine, 'collisionStart', (event) => {
-    for (const pair of event.pairs) {
-        const { bodyA, bodyB } = pair;
-        
-        const labels = [bodyA.label, bodyB.label];
-        
-        if (labels.includes('snake') && labels.includes('pickup')) {
-            const pickUpBody = bodyA.label === 'pickup' ? bodyA : bodyB;
-            console.log('Pickup collected!', pickUpBody.id);
+    Matter.Events.on(physicsEngine, 'collisionStart', (event) => {
+        for (const pair of event.pairs) {
+            const { bodyA, bodyB } = pair;
             
-            // Remove pickup from world and pickUps object
-            Matter.World.remove(physicsEngine.world, pickUpBody);
-            delete pickUps[pickUpBody.uuid];
+            const labels = [bodyA.label, bodyB.label];
+            
+            if (labels.includes('snake') && labels.includes('pickup')) {
+                const pickUpBody = bodyA.label === 'pickup' ? bodyA : bodyB;
+                const snakeBody  = bodyA.label === 'snake' ? bodyA : bodyB;
+
+                console.log('Pickup collected!', pickUpBody.id);
+                
+                growSnake(snakeBody.uuid);
+
+                // Remove pickup from world and pickUps object
+                Matter.World.remove(physicsEngine.world, pickUpBody);
+                delete pickUps[pickUpBody.uuid];
+            }
         }
+    });
+
+    // Unfortunately, we recreate the body because we can't change the radius of an existing circle body
+    function growSnake(snakeId) {
+        const snake = snakes[snakeId];
+        snake.data.radius *= 1.1;
+
+        const oldBody = snake.physics.body;
+
+        const newBody = Matter.Bodies.circle(
+            oldBody.position.x,
+            oldBody.position.y,
+            snake.data.radius,
+            { label: 'snake' }
+        );
+
+        newBody.uuid = snakeId;
+
+        // Transfer velocity and angle
+        Matter.Body.setVelocity(newBody, oldBody.velocity);
+        Matter.Body.setAngle(newBody, oldBody.angle);
+        Matter.Body.setAngularVelocity(newBody, oldBody.angularVelocity);
+
+        // Replace
+        Matter.World.remove(physicsEngine.world, oldBody);
+        Matter.World.add(physicsEngine.world, newBody);
+        snake.physics.body = newBody;
     }
-});
 
 server.listen(PORT, HOST, () => {
     console.log(`Server running at http://${HOST}:${PORT}`);
