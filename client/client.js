@@ -61,6 +61,14 @@ export class MainScene extends Scene {
                     snake.y = snakeData.y;
                     
                     snake.lerpAlpha = 0;
+
+                    if (snake.radius !== snakeData.radius) {
+                        snake.radius = snakeData.radius;
+                        const graphics = snake.container.first;
+                        graphics.clear();
+                        graphics.fillStyle(snake.color, 1);
+                        graphics.fillCircle(0, 0, snake.radius);
+                    }
                 }
 
                 const statePickUpIds = new Set(Object.keys(msg.pickUps));
@@ -123,7 +131,7 @@ export class MainScene extends Scene {
         
         this.add.existing(snake.container);
         const snakeCircle = this.add.graphics();
-        snakeCircle.fillStyle(0xffffff, 1);
+        snakeCircle.fillStyle(snake.color, 1);
         snakeCircle.fillCircle(0, 0, snake.radius);
         snakeCircle.setPosition(0, 0);
         snake.container.add(snakeCircle);
