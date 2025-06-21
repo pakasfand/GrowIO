@@ -5,7 +5,8 @@ const WebSocket = require('ws');
 const Matter = require('matter-js');
 const { v4: uuidv4 } = require('uuid');
 
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
+const HOST = process.env.HOST || '0.0.0.0';
 const PHYSICS_UPDATE_RATE = 1000 / 60; // 60 FPS
 const STATE_UPDATE_RATE = 1000 / 30; // 30 FPS
 const PICK_UP_SPAWN_RATE = 200;
@@ -16,7 +17,8 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 // Serve client files
-app.use(express.static('public'));
+app.use(express.static('dist'));
+app.use(express.static('public')); // Fallback for assets
 
 // World and game data
 const WORLD_SIZE = 5000;
@@ -180,6 +182,6 @@ Matter.Events.on(physicsEngine, 'collisionStart', (event) => {
     }
 });
 
-server.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+    console.log(`Server running at http://${HOST}:${PORT}`);
 });

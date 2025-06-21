@@ -11,9 +11,6 @@ export class MainScene extends Scene {
     
     create() {
         this.worldSize = new Phaser.Math.Vector2(5000, 5000);
-
-        this.tile = this.add.tileSprite(0, 0, this.worldSize.x, this.worldSize.y, 'pattern')
-            .setOrigin(0, 0);
         
         // Create FPS counter
         this.fpsText = this.add.text(0, 0, '', {
@@ -82,7 +79,7 @@ export class MainScene extends Scene {
         });
 
         this.time.addEvent({
-            delay: 1/30 * 1000,
+            delay: 1/10 * 1000,
             callback: () => {
                 this.sendMouseInput();
             },
