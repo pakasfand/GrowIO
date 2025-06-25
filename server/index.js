@@ -24,7 +24,7 @@ app.use(express.static('public')); // Fallback for assets
 const WORLD_SIZE = 5000;
 const SNAKE_SPEED = 5;
 const SNAKE_STARTING_RADIUS = 10;
-const MAX_PICKUP_COUNT = 100;
+const MAX_PICKUP_COUNT = 1000;
 
 const snakes = {};
 const pickUps = {};
@@ -78,7 +78,7 @@ function initSnake(snakeId)
     snake.physics = {
         body: Matter.Bodies.circle(snake.data.x, snake.data.y, snake.data.radius, {
             label: 'snake',
-            isSensor: false,
+            isSensor: true,
             uuid: snakeId
         })  
     }
@@ -179,53 +179,94 @@ function initPickUp(pickUpId)
     return pickUp;
 }
 
-    Matter.Events.on(physicsEngine, 'collisionStart', (event) => {
-        for (const pair of event.pairs) {
-            const { bodyA, bodyB } = pair;
-            
-            const labels = [bodyA.label, bodyB.label];
-            
-            if (labels.includes('snake') && labels.includes('pickup')) {
-                const pickUpBody = bodyA.label === 'pickup' ? bodyA : bodyB;
-                const snakeBody  = bodyA.label === 'snake' ? bodyA : bodyB;
+Matter.Events.on(physicsEngine, 'collisionStart', (event) => {
+    for (const pair of event.pairs) {
+        const { bodyA, bodyB } = pair;
+        
+        const labels = [bodyA.label, bodyB.label];
+        
+        if (labels.includes('snake') && labels.includes('pickup')) {
+            const pickUpBody = bodyA.label === 'pickup' ? bodyA : bodyB;
+            const snakeBody  = bodyA.label === 'snake' ? bodyA : bodyB;
 
-                console.log('Pickup collected!', pickUpBody.id);
-                
-                growSnake(snakeBody.uuid);
+            console.log('Pickup collected!', pickUpBody.id);
+            
+            growSnake(snakeBody.uuid);
 
-                // Remove pickup from world and pickUps object
-                Matter.World.remove(physicsEngine.world, pickUpBody);
-                delete pickUps[pickUpBody.uuid];
-            }
+            // Remove pickup from world and pickUps object
+            Matter.World.remove(physicsEngine.world, pickUpBody);
+            delete pickUps[pickUpBody.uuid];
         }
-    });
-
-    // Unfortunately, we recreate the body because we can't change the radius of an existing circle body
-    function growSnake(snakeId) {
-        const snake = snakes[snakeId];
-        snake.data.radius *= 1.1;
-
-        const oldBody = snake.physics.body;
-
-        const newBody = Matter.Bodies.circle(
-            oldBody.position.x,
-            oldBody.position.y,
-            snake.data.radius,
-            { label: 'snake' }
-        );
-
-        newBody.uuid = snakeId;
-
-        // Transfer velocity and angle
-        Matter.Body.setVelocity(newBody, oldBody.velocity);
-        Matter.Body.setAngle(newBody, oldBody.angle);
-        Matter.Body.setAngularVelocity(newBody, oldBody.angularVelocity);
-
-        // Replace
-        Matter.World.remove(physicsEngine.world, oldBody);
-        Matter.World.add(physicsEngine.world, newBody);
-        snake.physics.body = newBody;
     }
+});
+
+function circleContainsCircle(containerBody, innerBody) {
+    const dx = containerBody.position.x - innerBody.position.x;
+    const dy = containerBody.position.y - innerBody.position.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    return distance + innerBody.circleRadius <= containerBody.circleRadius;
+}
+
+Matter.Events.on(physicsEngine, 'collisionActive', (event) => {
+    for (const pair of event.pairs) {
+        const { bodyA, bodyB } = pair;
+
+        if (bodyA.label === 'snake' && bodyB.label === 'snake') {
+            const snakeA = snakes[bodyA.uuid];
+            const snakeB = snakes[bodyB.uuid];
+
+            if (circleContainsCircle(bodyA, bodyB)) {
+                console.log(`${bodyA.uuid} fully contains ${bodyB.uuid}`);
+                respawnSnake(bodyB.uuid);
+                growSnake(bodyA.uuid);
+            }
+
+            if (circleContainsCircle(bodyB, bodyA)) {
+                console.log(`${bodyB.uuid} fully contains ${bodyA.uuid}`);
+                respawnSnake(bodyA.uuid);
+                growSnake(bodyB.uuid);
+            } 
+        }
+    }
+});
+
+// Unfortunately, we recreate the body because we can't change the radius of an existing circle body
+function growSnake(snakeId) {
+    const snake = snakes[snakeId];
+    snake.data.radius *= 1.1;
+
+    const oldBody = snake.physics.body;
+
+    const newBody = Matter.Bodies.circle(
+        oldBody.position.x,
+        oldBody.position.y,
+        snake.data.radius,
+        { 
+            label: 'snake',
+            isSensor: true,
+            uuid: snakeId
+        }
+    );
+
+    newBody.uuid = snakeId;
+
+    // Transfer velocity and angle
+    Matter.Body.setVelocity(newBody, oldBody.velocity);
+    Matter.Body.setAngle(newBody, oldBody.angle);
+    Matter.Body.setAngularVelocity(newBody, oldBody.angularVelocity);
+
+    // Replace
+    Matter.World.remove(physicsEngine.world, oldBody);
+    Matter.World.add(physicsEngine.world, newBody);
+    snake.physics.body = newBody;
+}
+
+function respawnSnake(snakeId)
+{
+    Matter.World.remove(physicsEngine.world, snakes[snakeId].physics.body);
+    snakes[snakeId] = initSnake(snakeId);
+}
 
 server.listen(PORT, HOST, () => {
     console.log(`Server running at http://${HOST}:${PORT}`);

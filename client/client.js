@@ -13,6 +13,9 @@ export class MainScene extends Scene {
     create() {
         this.worldSize = new Phaser.Math.Vector2(5000, 5000);
         
+        this.tile = this.add.tileSprite(0, 0, this.worldSize.x, this.worldSize.y, 'pattern')
+            .setOrigin(0, 0);
+
         // Create FPS counter
         this.fpsText = this.add.text(0, 0, '', {
             font: '16px Courier',
@@ -25,6 +28,7 @@ export class MainScene extends Scene {
         this.socket = new WebSocket(config.serverUrl);
         this.playerId;
         this.snakes = {};
+        this.snakeIds = new Set();
         this.playerSnakeData;
         this.playerSnake = new Phaser.GameObjects.Container(this, 0, 0);
 
@@ -42,17 +46,40 @@ export class MainScene extends Scene {
                     this.snakes[snakeData.id] = this.initSnake(snakeData);
                 }
 
+                this.snakeIds = new Set(Object.keys(msg.allSnakeData));
                 this.cameras.main.startFollow(this.snakes[this.playerId].container, true, 1, 1);
                 this.cameras.main.setBounds(0, 0, this.worldSize.x, this.worldSize.y);
             }
 
             if (msg.type === 'state') {
-                for (const [snakeId, snakeData] of Object.entries(msg.allSnakeData)) {
-                    if(!this.snakes[snakeData.id]) {
-                        this.snakes[snakeData.id] = this.initSnake(snakeData);
-                    }
+                
+                // Synchronize snakes
+                const stateSnakeIds = new Set(Object.keys(msg.allSnakeData));
+                const snakeIdsToSpawn = stateSnakeIds.difference(this.snakeIds);
+                const snakeIdsToRemove = this.snakeIds.difference(stateSnakeIds);
+                this.snakeIds = stateSnakeIds;
 
-                    const snake = this.snakes[snakeData.id];
+                for (const snakeId of snakeIdsToSpawn) {
+                    this.snakes[snakeId] = this.initSnake(msg.allSnakeData[snakeId]);
+                    if(this.playerId === snakeId)
+                    {
+                        this.cameras.main.startFollow(this.snakes[this.playerId].container, true, 1, 1);
+                        this.cameras.main.setBounds(0, 0, this.worldSize.x, this.worldSize.y);
+                    }
+                }
+
+                for (const snakeId of snakeIdsToRemove) {
+                    this.snakes[snakeId].container.first.destroy();
+                    this.snakes[snakeId].container.destroy();
+                    delete this.snakes[snakeId];
+                    console.log(`Removing snake with if ${snakeId}`)
+                }
+                
+                // Update snake properties
+                for(const snakeId of stateSnakeIds)
+                {
+                    const snakeData = msg.allSnakeData[snakeId];
+                    const snake = this.snakes[snakeId];
 
                     snake.lastX = snake.x;
                     snake.lastY = snake.y;
@@ -61,7 +88,8 @@ export class MainScene extends Scene {
                     snake.y = snakeData.y;
                     
                     snake.lerpAlpha = 0;
-
+                    
+                    // Update snake visual as snake has grown
                     if (snake.radius !== snakeData.radius) {
                         snake.radius = snakeData.radius;
                         const graphics = snake.container.first;
@@ -70,7 +98,8 @@ export class MainScene extends Scene {
                         graphics.fillCircle(0, 0, snake.radius);
                     }
                 }
-
+                
+                // Synchronize pickups
                 const statePickUpIds = new Set(Object.keys(msg.pickUps));
                 const pickUpsIdsToSpawn = statePickUpIds.difference(this.pickUpIds);
                 const pickUpsIdsToRemove = this.pickUpIds.difference(statePickUpIds);
@@ -81,6 +110,12 @@ export class MainScene extends Scene {
                 }
 
                 for (const pickUpId of pickUpsIdsToRemove) {
+                    if(this.playerId === pickUpId)
+                    {
+                        this.cameras.main.startFollow(this.snakes[this.playerId].container, true, 1, 1);
+                        this.cameras.main.setBounds(0, 0, this.worldSize.x, this.worldSize.y);   
+                    }
+
                     this.pickUps[pickUpId].container.first.destroy();
                     this.pickUps[pickUpId].container.destroy();
                     delete this.pickUps[pickUpId];
