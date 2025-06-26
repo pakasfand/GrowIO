@@ -24,6 +24,17 @@ export class MainScene extends Scene {
         this.fpsText.setScrollFactor(0);
         this.fpsText.setDepth(1000);
 
+        // Create username display
+        this.playerUsernameText = this.add.text(0, 25, '', {
+            font: '14px Arial',
+            fill: '#ffffff',
+            backgroundColor: '#000000',
+            padding: { x: 4, y: 2 }
+        });
+        this.playerUsernameText.setScrollFactor(0);
+        this.playerUsernameText.setDepth(1000);
+        this.defaultPlayerUsername = "Player";
+
         // Use configuration for server connection
         this.socket = new WebSocket(config.serverUrl);
         this.playerId;
@@ -34,6 +45,15 @@ export class MainScene extends Scene {
 
         this.pickUps = {};
         this.pickUpIds = new Set();
+
+        // Send username with connection
+        this.socket.addEventListener('open', () => {
+            const username = window.playerUsername || this.defaultPlayerUsername;
+            this.socket.send(JSON.stringify({
+                type: 'connect',
+                username: username
+            }));
+        });
 
         this.socket.addEventListener('message', (event) => {
             const msg = JSON.parse(event.data);
@@ -47,8 +67,18 @@ export class MainScene extends Scene {
                 }
 
                 this.snakeIds = new Set(Object.keys(msg.allSnakeData));
-                this.cameras.main.startFollow(this.snakes[this.playerId].container, true, 1, 1);
-                this.cameras.main.setBounds(0, 0, this.worldSize.x, this.worldSize.y);
+                
+                // Only start following if the player's snake exists
+                if (this.snakes[this.playerId]) {
+                    this.cameras.main.startFollow(this.snakes[this.playerId].container, true, 1, 1);
+                    this.cameras.main.setBounds(0, 0, this.worldSize.x, this.worldSize.y);
+                }
+                
+                // Set player username
+                const playerUsername = window.playerUsername || this.defaultPlayerUsername;
+                if (this.playerUsernameText) {
+                    this.playerUsernameText.setText(`Playing as: ${playerUsername}`);
+                }
             }
 
             if (msg.type === 'state') {
@@ -69,8 +99,10 @@ export class MainScene extends Scene {
                 }
 
                 for (const snakeId of snakeIdsToRemove) {
-                    this.snakes[snakeId].container.first.destroy();
-                    this.snakes[snakeId].container.destroy();
+                    if (this.snakes[snakeId] && this.snakes[snakeId].container) {
+                        this.snakes[snakeId].container.first.destroy();
+                        this.snakes[snakeId].container.destroy();
+                    }
                     delete this.snakes[snakeId];
                     console.log(`Removing snake with if ${snakeId}`)
                 }
@@ -93,9 +125,17 @@ export class MainScene extends Scene {
                     if (snake.radius !== snakeData.radius) {
                         snake.radius = snakeData.radius;
                         const graphics = snake.container.first;
-                        graphics.clear();
-                        graphics.fillStyle(snake.color, 1);
-                        graphics.fillCircle(0, 0, snake.radius);
+                        if (graphics) {
+                            graphics.clear();
+                            graphics.fillStyle(snake.color, 1);
+                            graphics.fillCircle(0, 0, snake.radius);
+                        }
+                        
+                        // Update username position when snake grows
+                        const usernameText = snake.container.getAt(1);
+                        if (usernameText) {
+                            usernameText.setPosition(0, -snake.radius - 15);
+                        }
                     }
                 }
                 
@@ -116,8 +156,10 @@ export class MainScene extends Scene {
                         this.cameras.main.setBounds(0, 0, this.worldSize.x, this.worldSize.y);   
                     }
 
-                    this.pickUps[pickUpId].container.first.destroy();
-                    this.pickUps[pickUpId].container.destroy();
+                    if (this.pickUps[pickUpId] && this.pickUps[pickUpId].container) {
+                        this.pickUps[pickUpId].container.first.destroy();
+                        this.pickUps[pickUpId].container.destroy();
+                    }
                     delete this.pickUps[pickUpId];
                 }
             }
@@ -161,6 +203,7 @@ export class MainScene extends Scene {
             targetY: snakeData.targetY,
             color: snakeData.color,
             radius: snakeData.radius,
+            username: snakeData.username || this.defaultPlayerUsername,
             container: new Phaser.GameObjects.Container(this, snakeData.x, snakeData.y),
         };
         
@@ -170,6 +213,16 @@ export class MainScene extends Scene {
         snakeCircle.fillCircle(0, 0, snake.radius);
         snakeCircle.setPosition(0, 0);
         snake.container.add(snakeCircle);
+
+        // Add username text above the snake
+        const usernameText = this.add.text(0, -snake.radius - 15, snake.username, {
+            font: '12px Arial',
+            fill: '#ffffff',
+            // backgroundColor: '#000000',
+            padding: { x: 4, y: 2 }
+        });
+        usernameText.setOrigin(0.5, 0.5);
+        snake.container.add(usernameText);
 
         return snake;
     }

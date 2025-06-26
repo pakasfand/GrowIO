@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
@@ -7,10 +6,19 @@ const { v4: uuidv4 } = require('uuid');
 
 const PORT = process.env.PORT || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
+
+// Update loops
 const PHYSICS_UPDATE_RATE = 1000 / 60; // 60 FPS
 const STATE_UPDATE_RATE = 1000 / 30; // 30 FPS
+// Pickups
 const PICK_UP_SPAWN_RATE = 200;
 const PICK_UP_RADIUS = 5;
+// World and game data
+const WORLD_SIZE = 5000;
+const SNAKE_SPEED = 5;
+const SNAKE_STARTING_RADIUS = 10;
+const MAX_PICKUP_COUNT = 100;
+const DEFAULT_PLAYER_USERNAME = "Player";
 
 const app = express();
 const server = http.createServer(app);
@@ -19,12 +27,6 @@ const wss = new WebSocket.Server({ server });
 // Serve client files
 app.use(express.static('dist'));
 app.use(express.static('public')); // Fallback for assets
-
-// World and game data
-const WORLD_SIZE = 5000;
-const SNAKE_SPEED = 5;
-const SNAKE_STARTING_RADIUS = 10;
-const MAX_PICKUP_COUNT = 1000;
 
 const snakes = {};
 const pickUps = {};
@@ -35,7 +37,6 @@ physicsEngine.gravity.y = 0;
 
 wss.on('connection', (ws) => {
     const snakeId = uuidv4();
-    snakes[snakeId] = initSnake(snakeId);
 
     ws.send(JSON.stringify(
     { 
@@ -45,19 +46,29 @@ wss.on('connection', (ws) => {
     }));
 
     ws.on('message', (msg) => {
-        const snakeDataId = JSON.parse(msg);
-        if (snakeDataId.type === 'input') {
-            snakes[snakeDataId.id].data.targetX = snakeDataId.targetX;
-            snakes[snakeDataId.id].data.targetY = snakeDataId.targetY;
+        const message = JSON.parse(msg);
+        
+        if (message.type === 'connect') {
+            let playerUsername = message.username || DEFAULT_PLAYER_USERNAME;
+            snakes[snakeId] = initSnake(snakeId, playerUsername);
+            
+            console.log(`Player ${playerUsername} (${snakeId}) connected`);
+        }
+        else if (message.type === 'input') {
+            snakes[message.id].data.targetX = message.targetX;
+            snakes[message.id].data.targetY = message.targetY;
         }
     });
 
     ws.on('close', () => {
-        delete snakes[snakeId];
+        if (snakes[snakeId]) {
+            console.log(`Player ${snakes[snakeId].data.username || 'Unknown'} (${snakeId}) disconnected`);
+            delete snakes[snakeId];
+        }
     });
 });
 
-function initSnake(snakeId)
+function initSnake(snakeId, username)
 {
     const startX = WORLD_SIZE / 2 + Math.random() * 200 - 100;
     const startY = WORLD_SIZE / 2 + Math.random() * 200 - 100;
@@ -72,6 +83,7 @@ function initSnake(snakeId)
             targetY: startY,
             speed: SNAKE_SPEED,
             color: Math.random() * 0xffffff,
+            username: username,
         }
     };
 

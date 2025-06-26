@@ -3,13 +3,21 @@
     <head>
         <meta charset="UTF-8" />
         <title>Phaser Game</title>
+        <link rel="stylesheet" href="styles.css">
     </head>
     <body>
-        <div id="app">
-            <div id="phaser-container">
-                
+        <div id="login-container">
+            <h1>GrowIO</h1>
+            <div class="input-group">
+                <label for="username">Enter your username:</label>
+                <input type="text" id="username" placeholder="Enter username..." maxlength="20">
             </div>
+            <button id="play-button">Play Game</button>
+        </div>
+        
+        <div id="game-container">
+            <div id="phaser-container"></div>
         </div>
         <script type="module" src="/main.js"></script>
-  </body>
+    </body>
 </html>

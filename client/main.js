@@ -1,38 +1,70 @@
 import { Game } from "phaser";
 import { MainScene } from "./client";
 
-// More information about config: https://newdocs.phaser.io/docs/3.70.0/Phaser.Types.Core.GameConfig
 const config = {
     type: Phaser.AUTO,
     parent: "phaser-container",
     width: window.innerWidth,
     height: window.innerHeight,
-    // scale: {
-    //     mode: Phaser.Scale.RESIZE, // Automatically resize to fit the window
-    //     autoCenter: Phaser.Scale.CENTER_BOTH, // Center the canvas
-    // },
-    // backgroundColor: "#1c172e",
     pixelArt: false,
     roundPixel: false,
     antialias: true,
-    // max: {
-    //     width: 800,
-    //     height: 600,
-    // },
-    // scale: {
-    //     mode: Phaser.Scale.FIT,
-    //     autoCenter: Phaser.Scale.CENTER_BOTH
-    // },
-    // physics: {
-    //     default: "arcade",
-    //     arcade: {
-    //         gravity: { y: 0 },
-    //         debug: true
-    //     }
-    // },
     scene: [
         MainScene,
     ]
 };
 
-new Game(config);
+window.addEventListener('load', function() {
+    const savedUsername = localStorage.getItem('growio_username');
+    if (savedUsername) {
+        document.getElementById('username').value = savedUsername;
+    }
+    
+    document.getElementById("play-button").onclick = function() {
+        startGame();
+    };
+    
+    // Allow Enter key to submit
+    document.getElementById('username').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            startGame();
+        }
+    });
+});
+
+function startGame() {
+    const username = document.getElementById('username').value.trim();
+    if (username.length === 0) {
+        alert('Please enter a username!');
+        return;
+    }
+    
+    if (username.length > 20) {
+        alert('Username must be 20 characters or less!');
+        return;
+    }
+    
+    // Store username in localStorage for persistence
+    localStorage.setItem('growio_username', username);
+    
+    // Hide login, show game
+    document.getElementById('login-container').style.display = 'none';
+    document.getElementById('game-container').style.display = 'block';
+    
+    // Start the game with username
+    startGameWithUsername(username);
+}
+
+let gameInstance = null;
+
+// Make the game start function globally accessible
+function startGameWithUsername(username) {
+    if (gameInstance) {
+        gameInstance.destroy(true);
+    }
+    
+    // Store username globally for the scene to access
+    window.playerUsername = username;
+    
+    gameInstance = new Game(config);
+};
