@@ -66,6 +66,7 @@ wss.on('connection', (ws) => {
     ws.on('close', () => {
         if (snakes[snakeId]) {
             console.log(`Player ${snakes[snakeId].data.username || 'Unknown'} (${snakeId}) disconnected`);
+            Matter.World.remove(physicsEngine.world, snakes[snakeId].physics.body);
             delete snakes[snakeId];
         }
     });
@@ -260,13 +261,13 @@ Matter.Events.on(physicsEngine, 'collisionActive', (event) => {
 
             if (circleContainsCircle(bodyA, bodyB)) {
                 console.log(`${bodyA.uuid} fully contains ${bodyB.uuid}`);
-                respawnSnake(bodyB.uuid);
+                respawnSnake(bodyB.uuid, snakeB.data.username);
                 growSnake(bodyA.uuid);
             }
 
             if (circleContainsCircle(bodyB, bodyA)) {
                 console.log(`${bodyB.uuid} fully contains ${bodyA.uuid}`);
-                respawnSnake(bodyA.uuid);
+                respawnSnake(bodyA.uuid, snakeA.data.username);
                 growSnake(bodyB.uuid);
             } 
         }
@@ -307,10 +308,10 @@ function growSnake(snakeId) {
     snake.data.score += 1;
 }
 
-function respawnSnake(snakeId)
+function respawnSnake(snakeId, username)
 {
     Matter.World.remove(physicsEngine.world, snakes[snakeId].physics.body);
-    snakes[snakeId] = initSnake(snakeId);
+    snakes[snakeId] = initSnake(snakeId, username);
 }
 
 server.listen(PORT, HOST, () => {
