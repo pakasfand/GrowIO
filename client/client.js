@@ -6,16 +6,33 @@ export class MainScene extends Scene {
         super({ key: "MainScene" });
     }
     
-    preload() {
-        this.load.image('pattern', 'assets/background-tile.png');
-    }
-    
     create() {
         this.worldSize = new Phaser.Math.Vector2(5000, 5000);
-        
-        this.tile = this.add.tileSprite(0, 0, this.worldSize.x, this.worldSize.y, 'pattern')
-            .setOrigin(0, 0);
 
+        // Draw grid lines
+        const gridSize = 100; // Size of each grid cell
+        const gridGraphics = this.add.graphics();
+        gridGraphics.lineStyle(1, 0x444444, 0.5); // Gray lines, semi-transparent
+
+        // Vertical lines
+        for (let x = 0; x <= this.worldSize.x; x += gridSize) {
+            gridGraphics.beginPath();
+            gridGraphics.moveTo(x, 0);
+            gridGraphics.lineTo(x, this.worldSize.y);
+            gridGraphics.strokePath();
+        }
+
+        // Horizontal lines
+        for (let y = 0; y <= this.worldSize.y; y += gridSize) {
+            gridGraphics.beginPath();
+            gridGraphics.moveTo(0, y);
+            gridGraphics.lineTo(this.worldSize.x, y);
+            gridGraphics.strokePath();
+        }
+        gridGraphics.setDepth(-1); // Ensure grid is behind everything
+        
+        this.cameras.main.setBackgroundColor('#ffffff');
+        
         // Create FPS counter
         this.fpsText = this.add.text(0, 0, '', {
             font: '16px Courier',
@@ -218,7 +235,8 @@ export class MainScene extends Scene {
         const usernameText = this.add.text(0, -snake.radius - 15, snake.username, {
             font: '12px Arial',
             fill: '#ffffff',
-            // backgroundColor: '#000000',
+            stroke: '#000000',
+            strokeThickness: 2,
             padding: { x: 4, y: 2 }
         });
         usernameText.setOrigin(0.5, 0.5);
