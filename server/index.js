@@ -10,6 +10,8 @@ const HOST = process.env.HOST || '0.0.0.0';
 // Update loops
 const PHYSICS_UPDATE_RATE = 1000 / 60; // 60 FPS
 const STATE_UPDATE_RATE = 1000 / 30; // 30 FPS
+const LEADERBOARD_UPDATE_RATE = 1000; // 1 second
+
 // Pickups
 const PICK_UP_SPAWN_RATE = 200;
 const PICK_UP_RADIUS = 5;
@@ -19,6 +21,7 @@ const SNAKE_SPEED = 5;
 const SNAKE_STARTING_RADIUS = 10;
 const MAX_PICKUP_COUNT = 100;
 const DEFAULT_PLAYER_USERNAME = "Player";
+const LEADERBOARD_SIZE = 5;
 
 const app = express();
 const server = http.createServer(app);
@@ -84,6 +87,7 @@ function initSnake(snakeId, username)
             speed: SNAKE_SPEED,
             color: Math.random() * 0xffffff,
             username: username,
+            score: 0,
         }
     };
 
@@ -191,6 +195,32 @@ function initPickUp(pickUpId)
     return pickUp;
 }
 
+setInterval(() => {
+    broadcastLeaderboardUpdate();
+}, LEADERBOARD_UPDATE_RATE);
+
+function broadcastLeaderboardUpdate() {
+    const topSnakeNames = Object.values(snakes)
+        .map(s => s.data)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, LEADERBOARD_SIZE);
+
+    const leaderboard = topSnakeNames.map(s => ({
+        username: s.username,
+    }));
+
+    const payload = JSON.stringify({
+        type: 'leaderboard',
+        leaderboard: leaderboard
+    });
+
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(payload);
+        }
+    });
+}
+
 Matter.Events.on(physicsEngine, 'collisionStart', (event) => {
     for (const pair of event.pairs) {
         const { bodyA, bodyB } = pair;
@@ -272,6 +302,9 @@ function growSnake(snakeId) {
     Matter.World.remove(physicsEngine.world, oldBody);
     Matter.World.add(physicsEngine.world, newBody);
     snake.physics.body = newBody;
+
+    // Increase score
+    snake.data.score += 1;
 }
 
 function respawnSnake(snakeId)

@@ -52,6 +52,24 @@ export class MainScene extends Scene {
         this.playerUsernameText.setDepth(1000);
         this.defaultPlayerUsername = "Player";
 
+        // Create leaderboard
+        this.leaderboardText = this.add.text(
+            this.game.config.width - 20, // x (right edge)
+            20,                          // y (top)
+            '',                          // initial text
+            {
+                font: '16px Arial',
+                fill: '#222',
+                align: 'left',
+                backgroundColor: 'rgba(255,255,255,0.7)',
+                padding: { x: 8, y: 6 }
+            }
+        );
+        this.leaderboardText.setOrigin(1, 0); // right align
+        this.leaderboardText.setScrollFactor(0);
+        this.leaderboardText.setDepth(1000);
+        this.leaderboard = [];
+
         // Use configuration for server connection
         this.socket = new WebSocket(config.serverUrl);
         this.playerId;
@@ -179,6 +197,16 @@ export class MainScene extends Scene {
                     }
                     delete this.pickUps[pickUpId];
                 }
+            }
+
+            if (msg.type === 'leaderboard') {
+                this.leaderboard = msg.leaderboard;
+
+                let text = 'Leaderboard\n';
+                this.leaderboard.forEach((entry, i) => {
+                    text += `${i + 1}. ${entry.username}\n`;
+                });
+                this.leaderboardText.setText(text);
             }
         });
 
