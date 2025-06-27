@@ -34,15 +34,18 @@ export class MainScene extends Scene {
         this.cameras.main.setBackgroundColor('#ffffff');
         
         // Create FPS counter
-        this.fpsText = this.add.text(0, 0, '', {
+        this.fpsText = this.add.text(10, 10, '', {
             font: '16px Courier',
-            fill: '#00ff00'
+            fill: '#00ff00',
+            backgroundColor: '#000000',
+            padding: { x: 4, y: 2 }
         });
         this.fpsText.setScrollFactor(0);
         this.fpsText.setDepth(1000);
+        this.fpsText.setPosition(10, 10); // Ensure it's at screen coordinates
 
         // Create username display
-        this.playerUsernameText = this.add.text(0, 25, '', {
+        this.playerUsernameText = this.add.text(10, 35, '', {
             font: '14px Arial',
             fill: '#ffffff',
             backgroundColor: '#000000',
@@ -50,7 +53,20 @@ export class MainScene extends Scene {
         });
         this.playerUsernameText.setScrollFactor(0);
         this.playerUsernameText.setDepth(1000);
+        this.playerUsernameText.setPosition(10, 35); // Ensure it's at screen coordinates
         this.defaultPlayerUsername = "Player";
+
+        // Create split indicator
+        this.splitIndicatorText = this.add.text(10, 60, 'Press SPACE to split', {
+            font: '12px Arial',
+            fill: '#00ff00',
+            backgroundColor: '#000000',
+            padding: { x: 4, y: 2 }
+        });
+        this.splitIndicatorText.setScrollFactor(0);
+        this.splitIndicatorText.setDepth(1000);
+        this.splitIndicatorText.setPosition(10, 60); // Ensure it's at screen coordinates
+        this.splitIndicatorText.setVisible(false);
 
         // Create leaderboard
         this.leaderboardText = this.add.text(
@@ -103,11 +119,8 @@ export class MainScene extends Scene {
 
                 this.snakeIds = new Set(Object.keys(msg.allSnakeData));
                 
-                // Only start following if the player's snake exists
-                if (this.snakes[this.playerId]) {
-                    this.cameras.main.startFollow(this.snakes[this.playerId].container, true, 1, 1);
-                    this.cameras.main.setBounds(0, 0, this.worldSize.x, this.worldSize.y);
-                }
+                // Set camera bounds
+                this.cameras.main.setBounds(0, 0, this.worldSize.x, this.worldSize.y);
                 
                 // Set player username
                 const playerUsername = window.playerUsername || this.defaultPlayerUsername;
@@ -126,11 +139,6 @@ export class MainScene extends Scene {
 
                 for (const snakeId of snakeIdsToSpawn) {
                     this.snakes[snakeId] = this.initSnake(msg.allSnakeData[snakeId]);
-                    if(this.playerId === snakeId)
-                    {
-                        this.cameras.main.startFollow(this.snakes[this.playerId].container, true, 1, 1);
-                        this.cameras.main.setBounds(0, 0, this.worldSize.x, this.worldSize.y);
-                    }
                 }
 
                 for (const snakeId of snakeIdsToRemove) {
@@ -174,6 +182,11 @@ export class MainScene extends Scene {
                     }
                 }
                 
+                // Check if any player snake is big enough to split
+                const playerSnakes = Object.values(this.snakes).filter(s => s.username === (window.playerUsername || this.defaultPlayerUsername));
+                const canSplit = playerSnakes.some(s => s.radius >= 35); // Match server's MIN_SPLIT_RADIUS
+                this.splitIndicatorText.setVisible(canSplit);
+                
                 // Synchronize pickups
                 const statePickUpIds = new Set(Object.keys(msg.pickUps));
                 const pickUpsIdsToSpawn = statePickUpIds.difference(this.pickUpIds);
@@ -185,12 +198,6 @@ export class MainScene extends Scene {
                 }
 
                 for (const pickUpId of pickUpsIdsToRemove) {
-                    if(this.playerId === pickUpId)
-                    {
-                        this.cameras.main.startFollow(this.snakes[this.playerId].container, true, 1, 1);
-                        this.cameras.main.setBounds(0, 0, this.worldSize.x, this.worldSize.y);   
-                    }
-
                     if (this.pickUps[pickUpId] && this.pickUps[pickUpId].container) {
                         this.pickUps[pickUpId].container.first.destroy();
                         this.pickUps[pickUpId].container.destroy();
@@ -204,7 +211,7 @@ export class MainScene extends Scene {
 
                 let text = 'Leaderboard\n';
                 this.leaderboard.forEach((entry, i) => {
-                    text += `${i + 1}. ${entry.username}\n`;
+                    text += `${i + 1}. ${entry.username} (${entry.totalScore})\n`;
                 });
                 this.leaderboardText.setText(text);
             }
@@ -217,6 +224,11 @@ export class MainScene extends Scene {
             },
             callbackScope: this,
             loop: true
+        });
+
+        // Add split input handler
+        this.input.keyboard.on('keydown-SPACE', () => {
+            this.sendSplitInput();
         });
     }
 
@@ -233,6 +245,21 @@ export class MainScene extends Scene {
             const interpX = Phaser.Math.Linear(snake.lastX, snake.x, snake.lerpAlpha);
             const interpY = Phaser.Math.Linear(snake.lastY, snake.y, snake.lerpAlpha);
             snake.container.setPosition(interpX, interpY);
+        }
+
+        // Camera follows the midpoint of all player-controlled snakes
+        const playerSnakes = Object.values(this.snakes).filter(s => s.username === (window.playerUsername || this.defaultPlayerUsername));
+        if (playerSnakes.length > 0) {
+            let sumX = 0, sumY = 0;
+            for (const s of playerSnakes) {
+                sumX += s.container.x;
+                sumY += s.container.y;
+            }
+            const midX = sumX / playerSnakes.length;
+            const midY = sumY / playerSnakes.length;
+            
+            // Smooth camera following
+            this.cameras.main.pan(midX, midY, 100, 'Linear', true);
         }
     }
     
@@ -306,5 +333,19 @@ export class MainScene extends Scene {
             targetX: mouseWorldPosition.x,
             targetY: mouseWorldPosition.y
         }))
+    }
+
+    sendSplitInput() {
+        if(!this.playerId || this.socket.readyState !== WebSocket.OPEN) {return;}
+
+        const pointer = this.input.activePointer;
+        const mouseWorldPosition = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+
+        this.socket.send(JSON.stringify({
+            type: 'split',
+            id: this.playerId,
+            targetX: mouseWorldPosition.x,
+            targetY: mouseWorldPosition.y
+        }));
     }
 }

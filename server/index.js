@@ -17,11 +17,24 @@ const PICK_UP_SPAWN_RATE = 200;
 const PICK_UP_RADIUS = 5;
 // World and game data
 const WORLD_SIZE = 5000;
-const SNAKE_SPEED = 5;
-const SNAKE_STARTING_RADIUS = 10;
+const MIN_SNAKE_RADIUS = 10;
+const MAX_SNAKE_RADIUS = 500;
+// const SNAKE_STARTING_RADIUS = MIN_SNAKE_RADIUS;
+const MAX_SNAKE_SPEED = 0.5;
+const MIN_SNAKE_SPEED = 0.01;
+const SNAKE_SPEED_FACTOR = 0.005;
+const SNAKE_SPEED_GROWTH_FACTOR = 0.05;
+// const SNAKE_SPEED = MAX_SNAKE_SPEED;
 const MAX_PICKUP_COUNT = 100;
 const DEFAULT_PLAYER_USERNAME = "Player";
 const LEADERBOARD_SIZE = 5;
+
+// Split mechanics
+const MIN_SPLIT_RADIUS = 35; // Minimum radius to allow splitting
+const SPLIT_RATIO = 0.5; // Each split piece is 50% of original size
+const SPLIT_COOLDOWN = 3000; // 3 seconds cooldown between splits
+const MERGE_TIMER = 5000; // 5 seconds before split pieces can merge
+const MERGE_DISTANCE = 50; // Distance within which pieces can merge
 
 const app = express();
 const server = http.createServer(app);
@@ -58,8 +71,15 @@ wss.on('connection', (ws) => {
             console.log(`Player ${playerUsername} (${snakeId}) connected`);
         }
         else if (message.type === 'input') {
-            snakes[message.id].data.targetX = message.targetX;
-            snakes[message.id].data.targetY = message.targetY;
+            // Update all snake pieces belonging to this player
+            const playerSnakes = Object.values(snakes).filter(s => s.data.username === snakes[message.id]?.data.username);
+            for (const s of playerSnakes) {
+                s.data.targetX = message.targetX;
+                s.data.targetY = message.targetY;
+            }
+        }
+        else if (message.type === 'split') {
+            handleSplit(message.id, message.targetX, message.targetY);
         }
     });
 
@@ -82,13 +102,16 @@ function initSnake(snakeId, username)
             id: snakeId,
             x: startX,
             y: startY,
-            radius: SNAKE_STARTING_RADIUS,
+            radius: getSnakeRadius(1),
             targetX: startX,
             targetY: startY,
-            speed: SNAKE_SPEED,
+            speed: getSnakeSpeed(1),
             color: Math.random() * 0xffffff,
             username: username,
-            score: 0,
+            score: 1,
+            lastSplitTime: 0, // Track when last split occurred
+            splitFrom: null, // Track which snake this was split from
+            splitTime: 0, // Track when this piece was created from a split
         }
     };
 
@@ -96,7 +119,10 @@ function initSnake(snakeId, username)
         body: Matter.Bodies.circle(snake.data.x, snake.data.y, snake.data.radius, {
             label: 'snake',
             isSensor: true,
-            uuid: snakeId
+            uuid: snakeId,
+            inertia: Infinity, // Prevent rotation
+            frictionAir: 0.1, // Add air friction for better control
+            mass: 1, // Set consistent mass for all snakes regardless of size
         })  
     }
 
@@ -138,10 +164,11 @@ function updatePhysicsEngine() {
         const current = snakeBody.position;
         const direction = Matter.Vector.normalise(Matter.Vector.sub(target, current));
 
-        const speed = snake.data.speed;
-        Matter.Body.setVelocity(snakeBody, {
-            x: direction.x * speed,
-            y: direction.y * speed
+        // Apply force towards target instead of setting velocity directly
+        const forceMagnitude = snake.data.speed * SNAKE_SPEED_FACTOR; // Adjust multiplier as needed
+        Matter.Body.applyForce(snakeBody, snakeBody.position, {
+            x: direction.x * forceMagnitude,
+            y: direction.y * forceMagnitude
         });
     }
 
@@ -152,6 +179,113 @@ function updatePhysicsEngine() {
         snake.data.x = snake.physics.body.position.x;
         snake.data.y = snake.physics.body.position.y;
     }
+
+    // Check for merges between split pieces
+    checkForMerges();
+    
+    // Enable merging for split pieces that have passed the timer
+    enableMergingForSplitPieces();
+}
+
+function checkForMerges() {
+    const currentTime = Date.now();
+    const snakeIds = Object.keys(snakes);
+    
+    for (let i = 0; i < snakeIds.length; i++) {
+        for (let j = i + 1; j < snakeIds.length; j++) {
+            const snakeA = snakes[snakeIds[i]];
+            const snakeB = snakes[snakeIds[j]];
+            
+            // Check if both snakes belong to the same player
+            if (snakeA.data.username === snakeB.data.username) {
+                
+                // Check if both pieces have merging enabled (isSensor = true)
+                if (!snakeA.physics.body.isSensor || !snakeB.physics.body.isSensor) {
+                    continue;
+                }
+                
+                // Calculate dynamic merge distance based on snake sizes
+                const combinedRadius = snakeA.data.radius + snakeB.data.radius;
+                const dynamicMergeDistance = Math.max(MERGE_DISTANCE, combinedRadius * 0.3); // At least 30% of combined radius
+                
+                // Check if snakes are close enough to merge
+                const dx = snakeA.data.x - snakeB.data.x;
+                const dy = snakeA.data.y - snakeB.data.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance <= dynamicMergeDistance) {
+                    mergeSnakes(snakeA.data.id, snakeB.data.id);
+                    return; // Exit after one merge to avoid conflicts
+                }
+            }
+        }
+    }
+}
+
+function enableMergingForSplitPieces() {
+    const currentTime = Date.now();
+    
+    for (const snake of Object.values(snakes)) {
+        // Check if this snake has passed the merge timer since its last split
+        if (snake.data.lastSplitTime && 
+            currentTime - snake.data.lastSplitTime >= MERGE_TIMER) {
+            
+            // Enable merging by setting isSensor to true
+            if (!snake.physics.body.isSensor) {
+                snake.physics.body.isSensor = true;
+                console.log(`Enabled merging for snake ${snake.data.id}`);
+            }
+        }
+    }
+}
+
+function mergeSnakes(snakeAId, snakeBId) {
+    const snakeA = snakes[snakeAId];
+    const snakeB = snakes[snakeBId];
+    
+    if (!snakeA || !snakeB) return;
+    
+    // Calculate merged properties
+    const mergedRadius = Math.sqrt(snakeA.data.radius * snakeA.data.radius + snakeB.data.radius * snakeB.data.radius);
+    const mergedScore = snakeA.data.score + snakeB.data.score;
+    const mergedX = (snakeA.data.x + snakeB.data.x) / 2;
+    const mergedY = (snakeA.data.y + snakeB.data.y) / 2;
+    
+    // Update snake A with merged properties
+    snakeA.data.radius = mergedRadius;
+    snakeA.data.score = mergedScore;
+    snakeA.data.x = mergedX;
+    snakeA.data.y = mergedY;
+    snakeA.data.speed = getSnakeSpeed(mergedScore);
+    snakeA.data.splitFrom = null;
+    snakeA.data.splitTime = 0;
+    
+    // Update physics body for snake A
+    const oldBody = snakeA.physics.body;
+    const newBody = Matter.Bodies.circle(
+        mergedX,
+        mergedY,
+        mergedRadius,
+        { 
+            label: 'snake',
+            isSensor: false, // Merged snake should have collision enabled
+            uuid: snakeAId,
+            inertia: Infinity, // Prevent rotation
+            frictionAir: 0.1, // Add air friction for better control
+            mass: 1, // Set consistent mass for all snakes regardless of size
+        }
+    );
+    newBody.uuid = snakeAId;
+    
+    Matter.World.remove(physicsEngine.world, oldBody);
+    Matter.World.add(physicsEngine.world, newBody);
+    snakeA.physics.body = newBody;
+    
+    // Remove snake B
+    Matter.World.remove(physicsEngine.world, snakeB.physics.body);
+    delete snakes[snakeBId];
+    
+    console.log(`Snakes ${snakeAId} and ${snakeBId} merged into ${snakeAId}`);
 }
 
 function randPos() {
@@ -201,13 +335,26 @@ setInterval(() => {
 }, LEADERBOARD_UPDATE_RATE);
 
 function broadcastLeaderboardUpdate() {
-    const topSnakeNames = Object.values(snakes)
-        .map(s => s.data)
-        .sort((a, b) => b.score - a.score)
+    // Group snakes by username and sum their scores
+    const playerScores = {};
+    
+    for (const snake of Object.values(snakes)) {
+        const username = snake.data.username;
+        if (!playerScores[username]) {
+            playerScores[username] = 0;
+        }
+        playerScores[username] += snake.data.score;
+    }
+    
+    // Convert to array and sort by total score
+    const topPlayers = Object.entries(playerScores)
+        .map(([username, totalScore]) => ({ username, totalScore }))
+        .sort((a, b) => b.totalScore - a.totalScore)
         .slice(0, LEADERBOARD_SIZE);
 
-    const leaderboard = topSnakeNames.map(s => ({
-        username: s.username,
+    const leaderboard = topPlayers.map(p => ({
+        username: p.username,
+        totalScore: p.totalScore
     }));
 
     const payload = JSON.stringify({
@@ -259,6 +406,11 @@ Matter.Events.on(physicsEngine, 'collisionActive', (event) => {
             const snakeA = snakes[bodyA.uuid];
             const snakeB = snakes[bodyB.uuid];
 
+            // Prevent player's own snakes from eating each other
+            if (snakeA && snakeB && snakeA.data.username === snakeB.data.username) {
+                continue;
+            }
+
             if (circleContainsCircle(bodyA, bodyB)) {
                 console.log(`${bodyA.uuid} fully contains ${bodyB.uuid}`);
                 respawnSnake(bodyB.uuid, snakeB.data.username);
@@ -277,7 +429,15 @@ Matter.Events.on(physicsEngine, 'collisionActive', (event) => {
 // Unfortunately, we recreate the body because we can't change the radius of an existing circle body
 function growSnake(snakeId) {
     const snake = snakes[snakeId];
-    snake.data.radius *= 1.1;
+
+    // Increase score
+    snake.data.score += 1;
+
+    // Increase radius
+    snake.data.radius = getSnakeRadius(snake.data.score);
+
+    // Decrease speed
+    snake.data.speed = getSnakeSpeed(snake.data.score)
 
     const oldBody = snake.physics.body;
 
@@ -287,31 +447,154 @@ function growSnake(snakeId) {
         snake.data.radius,
         { 
             label: 'snake',
-            isSensor: true,
-            uuid: snakeId
+            isSensor: oldBody.isSensor, // Preserve the isSensor property
+            uuid: snakeId,
+            inertia: Infinity, // Prevent rotation
+            frictionAir: 0.1, // Add air friction for better control
+            mass: 1, // Set consistent mass for all snakes regardless of size
         }
     );
 
     newBody.uuid = snakeId;
 
-    // Transfer velocity and angle
-    Matter.Body.setVelocity(newBody, oldBody.velocity);
-    Matter.Body.setAngle(newBody, oldBody.angle);
-    Matter.Body.setAngularVelocity(newBody, oldBody.angularVelocity);
-
     // Replace
     Matter.World.remove(physicsEngine.world, oldBody);
     Matter.World.add(physicsEngine.world, newBody);
     snake.physics.body = newBody;
+}
 
-    // Increase score
-    snake.data.score += 1;
+function getGrowthProgress(foodEaten, factor = 0.2) {
+    return 1 - Math.exp(-factor * foodEaten); // smoothly goes from 0 to 1
+}
+
+function getSnakeRadius(foodEaten) {
+    const progress = getGrowthProgress(foodEaten, 0.02); // tune factor as needed
+    return MIN_SNAKE_RADIUS + (MAX_SNAKE_RADIUS - MIN_SNAKE_RADIUS) * progress;
+}
+
+function getSnakeSpeed(foodEaten) {
+    const progress = getGrowthProgress(foodEaten, SNAKE_SPEED_GROWTH_FACTOR); // Much smaller factor for gradual speed decrease
+    return MAX_SNAKE_SPEED - (MAX_SNAKE_SPEED - MIN_SNAKE_SPEED) * progress;
 }
 
 function respawnSnake(snakeId, username)
 {
     Matter.World.remove(physicsEngine.world, snakes[snakeId].physics.body);
     snakes[snakeId] = initSnake(snakeId, username);
+}
+
+function handleSplit(snakeId, targetX, targetY) {
+    const snake = snakes[snakeId];
+    if (!snake) return;
+
+    const currentTime = Date.now();
+    const playerUsername = snake.data.username;
+    
+    // Find all snakes belonging to this player that are big enough to split
+    const playerSnakes = Object.values(snakes).filter(s => 
+        s.data.username === playerUsername && 
+        s.data.radius >= MIN_SPLIT_RADIUS && 
+        currentTime - s.data.lastSplitTime >= SPLIT_COOLDOWN
+    );
+    
+    if (playerSnakes.length === 0) return; // No snakes can split
+
+    // Split all eligible snakes
+    for (const playerSnake of playerSnakes) {
+        splitSingleSnake(playerSnake, targetX, targetY, currentTime);
+    }
+    
+    console.log(`Split ${playerSnakes.length} snakes for player ${playerUsername}`);
+}
+
+function splitSingleSnake(snake, targetX, targetY, currentTime) {
+    const snakeId = snake.data.id;
+    
+    // Calculate direction to target
+    const dx = targetX - snake.data.x;
+    const dy = targetY - snake.data.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance === 0) return; // Can't split if no direction
+    
+    let directionX = dx / distance;
+    let directionY = dy / distance;
+
+    // Create new snake (the split piece)
+    const newSnakeId = uuidv4();
+    const splitDistance = snake.data.radius * 1.5; // Distance between split pieces
+    
+    const newSnake = {
+        data: {
+            id: newSnakeId,
+            x: snake.data.x + directionX * splitDistance,
+            y: snake.data.y + directionY * splitDistance,
+            radius: snake.data.radius * SPLIT_RATIO,
+            targetX: targetX,
+            targetY: targetY,
+            speed: getSnakeSpeed(Math.floor(snake.data.score * SPLIT_RATIO)), // Use proper speed calculation
+            color: snake.data.color,
+            username: snake.data.username,
+            score: Math.floor(snake.data.score * SPLIT_RATIO), // Split score proportionally
+            lastSplitTime: currentTime,
+            splitFrom: snake.data.id,
+            splitTime: currentTime,
+        }
+    };
+
+    newSnake.physics = {
+        body: Matter.Bodies.circle(newSnake.data.x, newSnake.data.y, newSnake.data.radius, {
+            label: 'snake',
+            isSensor: false, // Start with collision enabled to prevent overlap
+            uuid: newSnakeId,
+            inertia: Infinity, // Prevent rotation
+            frictionAir: 0.1, // Add air friction for better control
+            mass: 1, // Set consistent mass for all snakes regardless of size
+        })
+    };
+
+    // Update original snake
+    snake.data.radius *= SPLIT_RATIO;
+    snake.data.score = Math.floor(snake.data.score * SPLIT_RATIO);
+    snake.data.speed = getSnakeSpeed(Math.floor(snake.data.score * SPLIT_RATIO));
+    snake.data.lastSplitTime = currentTime;
+    snake.data.splitFrom = snake.data.id;
+    snake.data.splitTime = currentTime;
+
+    // Update physics bodies
+    const oldBody = snake.physics.body;
+    const newBody = Matter.Bodies.circle(
+        oldBody.position.x,
+        oldBody.position.y,
+        snake.data.radius,
+        { 
+            label: 'snake',
+            isSensor: false, // Start with collision enabled to prevent overlap
+            uuid: snakeId,
+            inertia: Infinity, // Prevent rotation
+            frictionAir: 0.1, // Add air friction for better control
+            mass: 1, // Set consistent mass for all snakes regardless of size
+        }
+    );
+    newBody.uuid = snakeId;
+
+    // Replace original snake's body
+    Matter.World.remove(physicsEngine.world, oldBody);
+    Matter.World.add(physicsEngine.world, newBody);
+    snake.physics.body = newBody;
+
+    // Add new snake to world
+    Matter.World.add(physicsEngine.world, newSnake.physics.body);
+    snakes[newSnakeId] = newSnake;
+
+    // Apply impulse force to shoot the new snake towards the target position
+    const impulseForce = 0.1; // Adjust this value for desired boost strength
+    Matter.Body.applyForce(newSnake.physics.body, newSnake.physics.body.position, {
+        x: directionX * impulseForce,
+        y: directionY * impulseForce
+    });
+
+    console.log(`Snake ${snakeId} split into ${newSnakeId}`);
 }
 
 server.listen(PORT, HOST, () => {
