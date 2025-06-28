@@ -173,9 +173,16 @@ export class MainScene extends Scene {
                             graphics.fillStyle(snake.color, 1);
                             graphics.fillCircle(0, 0, snake.radius);
                         }
+
+                        const snakeOutline = snake.container.getAt(1);
+                        if (snakeOutline) {
+                            snakeOutline.clear();
+                            snakeOutline.lineStyle(1, 0x000000, 1);
+                            snakeOutline.strokeCircle(0, 0, snake.radius);
+                        }
                         
                         // Update username position when snake grows
-                        const usernameText = snake.container.getAt(1);
+                        const usernameText = snake.container.getAt(2);
                         if (usernameText) {
                             usernameText.setPosition(0, -snake.radius - 15);
                         }
@@ -285,6 +292,12 @@ export class MainScene extends Scene {
         snakeCircle.fillCircle(0, 0, snake.radius);
         snakeCircle.setPosition(0, 0);
         snake.container.add(snakeCircle);
+
+        const snakeOutline = this.add.graphics();
+        snakeOutline.lineStyle(1, 0x000000, 1);
+        snakeOutline.strokeCircle(0, 0, snake.radius);
+        snakeOutline.setPosition(0, 0);
+        snake.container.add(snakeOutline);
 
         // Add username text above the snake
         const usernameText = this.add.text(0, -snake.radius - 15, snake.username, {
