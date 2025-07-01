@@ -89,10 +89,9 @@ export class MainScene extends Scene {
         // Use configuration for server connection
         this.socket = new WebSocket(config.serverUrl);
         this.playerId;
-        this.snakes = {};
-        this.snakeIds = new Set();
-        this.playerSnakeData;
-        this.playerSnake = new Phaser.GameObjects.Container(this, 0, 0);
+        this.cells = {};
+        this.cellIds = new Set();
+        this.playerCell = new Phaser.GameObjects.Container(this, 0, 0);
 
         this.pickUps = {};
         this.pickUpIds = new Set();
@@ -113,11 +112,13 @@ export class MainScene extends Scene {
                 this.playerId = msg.playerId;
                 console.log(`Connected as ${this.playerId}`);
 
-                for (const [snakeId, snakeData] of Object.entries(msg.allSnakeData)) {
-                    this.snakes[snakeData.id] = this.initSnake(snakeData);
+                const allCellData = getAllCellsById(msg.allPlayerData);
+                for (const [cellId, cellData] of Object.entries(allCellData)) {
+                    const playerUsername = msg.allPlayerData[cellData.ownerPlayerId]?.username || this.defaultPlayerUsername;
+                    this.cells[cellData.id] = this.initCell(cellData, playerUsername);
                 }
 
-                this.snakeIds = new Set(Object.keys(msg.allSnakeData));
+                this.cellIds = new Set(Object.keys(allCellData));
                 
                 // Set camera bounds
                 this.cameras.main.setBounds(0, 0, this.worldSize.x, this.worldSize.y);
@@ -131,67 +132,70 @@ export class MainScene extends Scene {
 
             if (msg.type === 'state') {
                 
-                // Synchronize snakes
-                const stateSnakeIds = new Set(Object.keys(msg.allSnakeData));
-                const snakeIdsToSpawn = stateSnakeIds.difference(this.snakeIds);
-                const snakeIdsToRemove = this.snakeIds.difference(stateSnakeIds);
-                this.snakeIds = stateSnakeIds;
+                // Synchronize cells
+                const allCellData = getAllCellsById(msg.allPlayerData);
+                const stateCellIds = new Set(Object.keys(allCellData));
+                const cellIdsToSpawn = stateCellIds.difference(this.cellIds);
+                const cellIdsToRemove = this.cellIds.difference(stateCellIds);
+                this.cellIds = stateCellIds;
 
-                for (const snakeId of snakeIdsToSpawn) {
-                    this.snakes[snakeId] = this.initSnake(msg.allSnakeData[snakeId]);
+                for (const cellId of cellIdsToSpawn) {
+                    let cellData = allCellData[cellId];
+                    const playerUsername = msg.allPlayerData[cellData.ownerPlayerId]?.username || this.defaultPlayerUsername;
+                    this.cells[cellId] = this.initCell(allCellData[cellId], playerUsername);
                 }
 
-                for (const snakeId of snakeIdsToRemove) {
-                    if (this.snakes[snakeId] && this.snakes[snakeId].container) {
-                        this.snakes[snakeId].container.first.destroy();
-                        this.snakes[snakeId].container.destroy();
+                for (const cellId of cellIdsToRemove) {
+                    if (this.cells[cellId] && this.cells[cellId].container) {
+                        this.cells[cellId].container.first.destroy();
+                        this.cells[cellId].container.destroy();
                     }
-                    delete this.snakes[snakeId];
-                    console.log(`Removing snake with if ${snakeId}`)
+                    delete this.cells[cellId];
+                    console.log(`Removing cell with if ${cellId}`)
                 }
                 
-                // Update snake properties
-                for(const snakeId of stateSnakeIds)
+                // Update cell properties
+                for(const cellId of stateCellIds)
                 {
-                    const snakeData = msg.allSnakeData[snakeId];
-                    const snake = this.snakes[snakeId];
+                    const cellData = allCellData[cellId];
+                    const cell = this.cells[cellId];
 
-                    snake.lastX = snake.x;
-                    snake.lastY = snake.y;
+                    cell.lastX = cell.x;
+                    cell.lastY = cell.y;
 
-                    snake.x = snakeData.x;
-                    snake.y = snakeData.y;
+                    cell.x = cellData.x;
+                    cell.y = cellData.y;
                     
-                    snake.lerpAlpha = 0;
+                    cell.lerpAlpha = 0;
                     
-                    // Update snake visual as snake has grown
-                    if (snake.radius !== snakeData.radius) {
-                        snake.radius = snakeData.radius;
-                        const graphics = snake.container.first;
+                    // Update cell visual as cell has grown
+                    if (cell.radius !== cellData.radius) {
+                        cell.radius = cellData.radius;
+                        const graphics = cell.container.first;
                         if (graphics) {
                             graphics.clear();
-                            graphics.fillStyle(snake.color, 1);
-                            graphics.fillCircle(0, 0, snake.radius);
+                            graphics.fillStyle(cell.color, 1);
+                            graphics.fillCircle(0, 0, cell.radius);
                         }
 
-                        const snakeOutline = snake.container.getAt(1);
-                        if (snakeOutline) {
-                            snakeOutline.clear();
-                            snakeOutline.lineStyle(1, 0x000000, 1);
-                            snakeOutline.strokeCircle(0, 0, snake.radius);
+                        const cellOutline = cell.container.getAt(1);
+                        if (cellOutline) {
+                            cellOutline.clear();
+                            cellOutline.lineStyle(1, 0x000000, 1);
+                            cellOutline.strokeCircle(0, 0, cell.radius);
                         }
                         
-                        // Update username position when snake grows
-                        const usernameText = snake.container.getAt(2);
+                        // Update username position when cell grows
+                        const usernameText = cell.container.getAt(2);
                         if (usernameText) {
-                            usernameText.setPosition(0, -snake.radius - 15);
+                            usernameText.setPosition(0, -cell.radius - 15);
                         }
                     }
                 }
                 
-                // Check if any player snake is big enough to split
-                const playerSnakes = Object.values(this.snakes).filter(s => s.username === (window.playerUsername || this.defaultPlayerUsername));
-                const canSplit = playerSnakes.some(s => s.radius >= 35); // Match server's MIN_SPLIT_RADIUS
+                // Check if any player cell is big enough to split
+                const playerCells = Object.values(allCellData).filter(cellData => cellData.ownerPlayerId === this.playerId);
+                const canSplit = playerCells.some(s => s.radius >= 35); // Match server's MIN_SPLIT_RADIUS
                 this.splitIndicatorText.setVisible(canSplit);
                 
                 // Synchronize pickups
@@ -244,63 +248,64 @@ export class MainScene extends Scene {
 
         const alphaStep = delta / (1000 / 30); // Fixed to match server's 30Hz
 
-        for (const snake of Object.values(this.snakes)) {
-            if (snake.lerpAlpha === undefined) continue;
+        for (const cell of Object.values(this.cells)) {
+            if (cell.lerpAlpha === undefined) continue;
 
-            snake.lerpAlpha = Math.min(snake.lerpAlpha + alphaStep, 1);
+            cell.lerpAlpha = Math.min(cell.lerpAlpha + alphaStep, 1);
 
-            const interpX = Phaser.Math.Linear(snake.lastX, snake.x, snake.lerpAlpha);
-            const interpY = Phaser.Math.Linear(snake.lastY, snake.y, snake.lerpAlpha);
-            snake.container.setPosition(interpX, interpY);
+            const interpX = Phaser.Math.Linear(cell.lastX, cell.x, cell.lerpAlpha);
+            const interpY = Phaser.Math.Linear(cell.lastY, cell.y, cell.lerpAlpha);
+            cell.container.setPosition(interpX, interpY);
         }
 
-        // Camera follows the midpoint of all player-controlled snakes
-        const playerSnakes = Object.values(this.snakes).filter(s => s.username === (window.playerUsername || this.defaultPlayerUsername));
-        if (playerSnakes.length > 0) {
+        // Camera follows the midpoint of all player-controlled cells
+        const playerCells = Object.values(this.cells).filter(cell => cell.ownerPlayerId === this.playerId);
+        if (playerCells.length > 0) {
             let sumX = 0, sumY = 0;
-            for (const s of playerSnakes) {
+            for (const s of playerCells) {
                 sumX += s.container.x;
                 sumY += s.container.y;
             }
-            const midX = sumX / playerSnakes.length;
-            const midY = sumY / playerSnakes.length;
+            const midX = sumX / playerCells.length;
+            const midY = sumY / playerCells.length;
             
             // Smooth camera following
             this.cameras.main.pan(midX, midY, 100, 'Linear', true);
         }
     }
     
-    initSnake(snakeData)
+    initCell(cellData, playerUsername)
     {
-        let snake = {
-            id: snakeData.id,
-            x: snakeData.x,
-            y: snakeData.y,
-            lastX: snakeData.x,
-            lastY: snakeData.y,
-            targetX: snakeData.targetX,
-            targetY: snakeData.targetY,
-            color: snakeData.color,
-            radius: snakeData.radius,
-            username: snakeData.username || this.defaultPlayerUsername,
-            container: new Phaser.GameObjects.Container(this, snakeData.x, snakeData.y),
+        let cell = {
+            id: cellData.id,
+            ownerPlayerId: cellData.ownerPlayerId,
+            x: cellData.x,
+            y: cellData.y,
+            lastX: cellData.x,
+            lastY: cellData.y,
+            targetX: cellData.targetX,
+            targetY: cellData.targetY,
+            color: cellData.color,
+            radius: cellData.radius,
+            username: playerUsername,
+            container: new Phaser.GameObjects.Container(this, cellData.x, cellData.y),
         };
         
-        this.add.existing(snake.container);
-        const snakeCircle = this.add.graphics();
-        snakeCircle.fillStyle(snake.color, 1);
-        snakeCircle.fillCircle(0, 0, snake.radius);
-        snakeCircle.setPosition(0, 0);
-        snake.container.add(snakeCircle);
+        this.add.existing(cell.container);
+        const cellCircle = this.add.graphics();
+        cellCircle.fillStyle(cell.color, 1);
+        cellCircle.fillCircle(0, 0, cell.radius);
+        cellCircle.setPosition(0, 0);
+        cell.container.add(cellCircle);
 
-        const snakeOutline = this.add.graphics();
-        snakeOutline.lineStyle(1, 0x000000, 1);
-        snakeOutline.strokeCircle(0, 0, snake.radius);
-        snakeOutline.setPosition(0, 0);
-        snake.container.add(snakeOutline);
+        const cellOutline = this.add.graphics();
+        cellOutline.lineStyle(1, 0x000000, 1);
+        cellOutline.strokeCircle(0, 0, cell.radius);
+        cellOutline.setPosition(0, 0);
+        cell.container.add(cellOutline);
 
-        // Add username text above the snake
-        const usernameText = this.add.text(0, -snake.radius - 15, snake.username, {
+        // Add username text above the cell
+        const usernameText = this.add.text(0, -cell.radius - 15, cell.username, {
             font: '12px Arial',
             fill: '#ffffff',
             stroke: '#000000',
@@ -308,9 +313,9 @@ export class MainScene extends Scene {
             padding: { x: 4, y: 2 }
         });
         usernameText.setOrigin(0.5, 0.5);
-        snake.container.add(usernameText);
+        cell.container.add(usernameText);
 
-        return snake;
+        return cell;
     }
 
     initPickUp(pickUpData)
@@ -360,5 +365,17 @@ export class MainScene extends Scene {
             targetX: mouseWorldPosition.x,
             targetY: mouseWorldPosition.y
         }));
+    }
+    
+    getAllCellsById(allPlayerData) {
+        const allCellsById = {};
+    
+        for (const player of Object.values(allPlayerData)) {
+            for (const [cellId, cellData] of Object.entries(player.cells)) {
+                allCellsById[cellId] = cellData;
+            }
+        }
+    
+        return allCellsById;
     }
 }
