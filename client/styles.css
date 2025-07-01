@@ -146,3 +146,49 @@ body {
     background: linear-gradient(135deg, #764ba2 0%, #668eea 100%);
     transform: translateY(-2px);
 }
+
+@media (max-width: 600px) {
+    body {
+        min-height: 100vh;
+        font-size: 15px;
+        padding: 0;
+    }
+    #login-container {
+        padding: 18px 6px;
+        max-width: 98vw;
+        width: 98vw;
+        border-radius: 8px;
+    }
+    #login-container h1 {
+        font-size: 22px;
+        margin-bottom: 18px;
+    }
+    .input-group input {
+        font-size: 15px;
+        padding: 10px;
+    }
+    #play-button {
+        font-size: 16px;
+        padding: 12px 0;
+    }
+    .instructions {
+        padding: 10px;
+        font-size: 13px;
+    }
+    #game-container {
+        height: 100dvh;
+        min-height: 100dvh;
+    }
+    #phaser-container {
+        height: 100dvh;
+        min-height: 100dvh;
+    }
+    #respawn-overlay h1 {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    #respawn-button {
+        font-size: 1.2rem;
+        padding: 0.7rem 1.2rem;
+    }
+}

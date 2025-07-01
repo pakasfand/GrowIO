@@ -67,4 +67,14 @@ function startGameWithUsername(username) {
     window.playerUsername = username;
     
     gameInstance = new Game(config);
+    // Responsive resize for mobile
+    window.addEventListener('resize', () => {
+        if (gameInstance && gameInstance.scale) {
+            gameInstance.scale.resize(window.innerWidth, window.innerHeight);
+        }
+    });
+    // Initial resize in case of orientation change
+    if (gameInstance && gameInstance.scale) {
+        gameInstance.scale.resize(window.innerWidth, window.innerHeight);
+    }
 };
