@@ -112,7 +112,7 @@ export class MainScene extends Scene {
                 this.playerId = msg.playerId;
                 console.log(`Connected as ${this.playerId}`);
 
-                const allCellData = getAllCellsById(msg.allPlayerData);
+                const allCellData = this.getAllCellsById(msg.allPlayerData);
                 for (const [cellId, cellData] of Object.entries(allCellData)) {
                     const playerUsername = msg.allPlayerData[cellData.ownerPlayerId]?.username || this.defaultPlayerUsername;
                     this.cells[cellData.id] = this.initCell(cellData, playerUsername);
@@ -133,7 +133,7 @@ export class MainScene extends Scene {
             if (msg.type === 'state') {
                 
                 // Synchronize cells
-                const allCellData = getAllCellsById(msg.allPlayerData);
+                const allCellData = this.getAllCellsById(msg.allPlayerData);
                 const stateCellIds = new Set(Object.keys(allCellData));
                 const cellIdsToSpawn = stateCellIds.difference(this.cellIds);
                 const cellIdsToRemove = this.cellIds.difference(stateCellIds);
