@@ -244,6 +244,14 @@ export class MainScene extends Scene {
         this.input.keyboard.on('keydown-SPACE', () => {
             this.sendSplitInput();
         });
+        
+        // Add mobile split button handler
+        const splitButton = document.getElementById('split-button');
+        if (splitButton) {
+            splitButton.onclick = () => {
+                this.sendSplitInput();
+            };
+        }
     }
 
     update(time, delta) {

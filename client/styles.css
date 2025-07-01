@@ -147,6 +147,29 @@ body {
     transform: translateY(-2px);
 }
 
+#split-button {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10001;
+    font-size: 1.5rem;
+    padding: 1rem 2rem;
+    border-radius: 50px;
+    background: linear-gradient(135deg, #668eea 0%, #764ba2 100%);
+    color: #fff;
+    border: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    display: none; /* Hidden by default */
+    cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+}
+
+#split-button:hover {
+    background: linear-gradient(135deg, #764ba2 0%, #668eea 100%);
+    transform: translateX(-50%) translateY(-2px);
+}
+
 @media (max-width: 600px) {
     body {
         min-height: 100vh;
@@ -182,6 +205,12 @@ body {
     #phaser-container {
         height: 100dvh;
         min-height: 100dvh;
+    }
+    #split-button {
+        display: block;
+        font-size: 1.2rem;
+        padding: 0.8rem 1.5rem;
+        bottom: 1.5rem;
     }
     #respawn-overlay h1 {
         font-size: 1.5rem;
