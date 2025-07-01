@@ -91,7 +91,6 @@ export class MainScene extends Scene {
         this.playerId;
         this.cells = {};
         this.cellIds = new Set();
-        this.playerCell = new Phaser.GameObjects.Container(this, 0, 0);
 
         this.pickUps = {};
         this.pickUpIds = new Set();
@@ -225,6 +224,10 @@ export class MainScene extends Scene {
                     text += `${i + 1}. ${entry.username} (${entry.totalScore})\n`;
                 });
                 this.leaderboardText.setText(text);
+            }
+
+            if (msg.type === 'died') {
+                this.showRespawnScreen();
             }
         });
 
@@ -377,5 +380,26 @@ export class MainScene extends Scene {
         }
     
         return allCellsById;
+    }
+
+    showRespawnScreen() {
+        const overlay = document.getElementById('respawn-overlay');
+        if (overlay) {
+            overlay.style.display = 'flex';
+            const respawnBtn = document.getElementById('respawn-button');
+            if (respawnBtn) {
+                respawnBtn.onclick = () => {
+                    this.socket.send(JSON.stringify({ type: 'respawn' }));
+                    this.hideRespawnScreen();
+                };
+            }
+        }
+    }
+
+    hideRespawnScreen() {
+        const overlay = document.getElementById('respawn-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+        }
     }
 }

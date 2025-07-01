@@ -54,6 +54,7 @@ physicsEngine.gravity.y = 0;
 
 wss.on('connection', (ws) => {
     const playerId = uuidv4();
+    ws.playerId = playerId;
 
     ws.send(JSON.stringify(
     { 
@@ -97,6 +98,14 @@ wss.on('connection', (ws) => {
         }
         else if (message.type === 'split') {
             handleSplit(message.id, message.targetX, message.targetY);
+        }
+        else if (message.type === 'respawn') {
+            const player = players[playerId];
+            if (player && player.isWaitingToRespawn) {
+                let cellId = uuidv4();
+                player.data.cells[cellId] = initCell(cellId, playerId, player.data.username);
+                player.isWaitingToRespawn = false;
+            }
         }
     });
 
@@ -240,11 +249,11 @@ function checkCellOverlaps() {
                 if (circleContainsCircle(bodyA, bodyB)) {
                     console.log(`${bodyA.uuid} fully contains ${bodyB.uuid}`);
                     onCellEaten(bodyB.uuid, cellB.data.ownerPlayerId, playerB.data.username);
-                    growCell(bodyA.uuid, playerA.data.id);
+                    growCell(bodyA.uuid, playerA.data.id, cellB.data.score);
                 } else if (circleContainsCircle(bodyB, bodyA)) {
                     console.log(`${bodyB.uuid} fully contains ${bodyA.uuid}`);
                     onCellEaten(bodyA.uuid, cellA.data.ownerPlayerId, playerA.data.username);
-                    growCell(bodyB.uuid, playerB.data.id);
+                    growCell(bodyB.uuid, playerB.data.id, cellA.data.score);
                 }
             }
         }
@@ -436,7 +445,7 @@ Matter.Events.on(physicsEngine, 'collisionStart', (event) => {
 
             console.log('Pickup collected!', pickUpBody.id);
             
-            growCell(cellBody.uuid, player.data.id);
+            growCell(cellBody.uuid, player.data.id, 1);
 
             // Remove pickup from world and pickUps object
             Matter.World.remove(physicsEngine.world, pickUpBody);
@@ -453,41 +462,12 @@ function circleContainsCircle(containerBody, innerBody) {
     return distance + innerBody.circleRadius <= containerBody.circleRadius;
 }
 
-Matter.Events.on(physicsEngine, 'collisionActive', (event) => {
-    for (const pair of event.pairs) {
-        const { bodyA, bodyB } = pair;
-
-        if (bodyA.label === 'cell' && bodyB.label === 'cell') {
-
-            const playerA = findPlayerByCellId(bodyA.uuid);
-            const playerB = findPlayerByCellId(bodyB.uuid);
-
-            // Prevent player's own cells from eating each other
-            if (playerA && playerB && playerA.data.username === playerB.data.username) {
-                continue;
-            }
-
-            if (circleContainsCircle(bodyA, bodyB)) {
-                console.log(`${bodyA.uuid} fully contains ${bodyB.uuid}`);
-                respawnCell(bodyB.uuid, playerB.id, playerB.username);
-                growCell(bodyA.uuid, playerA.data.id);
-            }
-
-            if (circleContainsCircle(bodyB, bodyA)) {
-                console.log(`${bodyB.uuid} fully contains ${bodyA.uuid}`);
-                respawnCell(bodyA.uuid, playerA.id, playerA.username);
-                growCell(bodyB.uuid, playerB.data.id);
-            } 
-        }
-    }
-});
-
 // Unfortunately, we recreate the body because we can't change the radius of an existing circle body
-function growCell(cellId, playerId) {
+function growCell(cellId, playerId, score) {
     const cell = players[playerId].data.cells[cellId];
 
     // Increase score
-    cell.data.score += 1;
+    cell.data.score += score;
 
     // Increase radius
     cell.data.radius = getCellRadius(cell.data.score);
@@ -535,14 +515,16 @@ function onCellEaten(cellId, ownerPlayerId, username)
 {
     if(Object.keys(players[ownerPlayerId].data.cells).length == 1)
     {
-        respawnCell(cellId, ownerPlayerId, username);
+        players[ownerPlayerId].isWaitingToRespawn = true;
+        const ws = getWebSocketByPlayerId(ownerPlayerId);
+        if (ws) {
+            ws.send(JSON.stringify({ type: 'died' }));
+        }
     }
-    else
-    {
-        let cell = players[ownerPlayerId].data.cells[cellId];
-        Matter.World.remove(physicsEngine.world, cell.physics.body);
-        delete players[ownerPlayerId].data.cells[cellId];
-    }
+
+    let cell = players[ownerPlayerId].data.cells[cellId];
+    Matter.World.remove(physicsEngine.world, cell.physics.body);
+    delete players[ownerPlayerId].data.cells[cellId];
 }
 
 function respawnCell(cellId, ownerPlayerId, username)
@@ -714,6 +696,15 @@ function getAllCells()
         });
     }
     return allCellsById;
+}
+
+function getWebSocketByPlayerId(playerId) {
+    for (const client of wss.clients) {
+        if (client.readyState === WebSocket.OPEN && client.playerId === playerId) {
+            return client;
+        }
+    }
+    return null;
 }
 
 server.listen(PORT, HOST, () => {
