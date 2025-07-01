@@ -33,58 +33,14 @@ export class MainScene extends Scene {
         
         this.cameras.main.setBackgroundColor('#ffffff');
         
-        // Create FPS counter
-        this.fpsText = this.add.text(10, 10, '', {
-            font: '16px Courier',
-            fill: '#00ff00',
-            backgroundColor: '#000000',
-            padding: { x: 4, y: 2 }
-        });
-        this.fpsText.setScrollFactor(0);
-        this.fpsText.setDepth(1000);
-        this.fpsText.setPosition(10, 10); // Ensure it's at screen coordinates
+        // Create a UI container for all UI text
+        this.uiContainer = this.add.container(0, 0);
 
-        // Create username display
-        this.playerUsernameText = this.add.text(10, 35, '', {
-            font: '14px Arial',
-            fill: '#ffffff',
-            backgroundColor: '#000000',
-            padding: { x: 4, y: 2 }
-        });
-        this.playerUsernameText.setScrollFactor(0);
-        this.playerUsernameText.setDepth(1000);
-        this.playerUsernameText.setPosition(10, 35); // Ensure it's at screen coordinates
-        this.defaultPlayerUsername = "Player";
-
-        // Create split indicator
-        this.splitIndicatorText = this.add.text(10, 60, 'Press SPACE to split', {
-            font: '12px Arial',
-            fill: '#00ff00',
-            backgroundColor: '#000000',
-            padding: { x: 4, y: 2 }
-        });
-        this.splitIndicatorText.setScrollFactor(0);
-        this.splitIndicatorText.setDepth(1000);
-        this.splitIndicatorText.setPosition(10, 60); // Ensure it's at screen coordinates
-        this.splitIndicatorText.setVisible(false);
-
-        // Create leaderboard
-        this.leaderboardText = this.add.text(
-            this.game.config.width - 20, // x (right edge)
-            20,                          // y (top)
-            '',                          // initial text
-            {
-                font: '16px Arial',
-                fill: '#222',
-                align: 'left',
-                backgroundColor: 'rgba(255,255,255,0.7)',
-                padding: { x: 8, y: 6 }
-            }
-        );
-        this.leaderboardText.setOrigin(1, 0); // right align
-        this.leaderboardText.setScrollFactor(0);
-        this.leaderboardText.setDepth(1000);
-        this.leaderboard = [];
+        // HTML overlay elements
+        this.fpsOverlay = document.getElementById('fps-overlay');
+        this.usernameOverlay = document.getElementById('username-overlay');
+        this.splitIndicatorOverlay = document.getElementById('split-indicator-overlay');
+        this.leaderboardOverlay = document.getElementById('leaderboard-overlay');
 
         // Use configuration for server connection
         this.socket = new WebSocket(config.serverUrl);
@@ -102,6 +58,9 @@ export class MainScene extends Scene {
                 type: 'connect',
                 username: username
             }));
+            if (this.usernameOverlay) {
+                this.usernameOverlay.textContent = `Playing as: ${username}`;
+            }
         });
 
         this.socket.addEventListener('message', (event) => {
@@ -123,9 +82,9 @@ export class MainScene extends Scene {
                 this.cameras.main.setBounds(0, 0, this.worldSize.x, this.worldSize.y);
                 
                 // Set player username
-                const playerUsername = window.playerUsername || this.defaultPlayerUsername;
-                if (this.playerUsernameText) {
-                    this.playerUsernameText.setText(`Playing as: ${playerUsername}`);
+                if (this.usernameOverlay) {
+                    const playerUsername = window.playerUsername || this.defaultPlayerUsername;
+                    this.usernameOverlay.textContent = `Playing as: ${playerUsername}`;
                 }
             }
 
@@ -195,7 +154,9 @@ export class MainScene extends Scene {
                 // Check if any player cell is big enough to split
                 const playerCells = Object.values(allCellData).filter(cellData => cellData.ownerPlayerId === this.playerId);
                 const canSplit = playerCells.some(s => s.radius >= 35); // Match server's MIN_SPLIT_RADIUS
-                this.splitIndicatorText.setVisible(canSplit);
+                if (this.splitIndicatorOverlay) {
+                    this.splitIndicatorOverlay.style.display = canSplit ? 'block' : 'none';
+                }
                 
                 // Synchronize pickups
                 const statePickUpIds = new Set(Object.keys(msg.pickUps));
@@ -218,12 +179,13 @@ export class MainScene extends Scene {
 
             if (msg.type === 'leaderboard') {
                 this.leaderboard = msg.leaderboard;
-
                 let text = 'Leaderboard\n';
                 this.leaderboard.forEach((entry, i) => {
                     text += `${i + 1}. ${entry.username} (${entry.totalScore})\n`;
                 });
-                this.leaderboardText.setText(text);
+                if (this.leaderboardOverlay) {
+                    this.leaderboardOverlay.textContent = text;
+                }
             }
 
             if (msg.type === 'died') {
@@ -252,10 +214,56 @@ export class MainScene extends Scene {
                 this.sendSplitInput();
             };
         }
+
+        // Camera zoom settings
+        this.minZoom = 0.5;
+        this.maxZoom = 2;
+        this.cameras.main.setZoom(1);
+
+        // Mouse wheel zoom (desktop)
+        this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY, deltaZ) => {
+            let newZoom = Phaser.Math.Clamp(this.cameras.main.zoom - deltaY * 0.001, this.minZoom, this.maxZoom);
+            this.cameras.main.setZoom(newZoom);
+        });
+
+        // Pinch zoom (mobile)
+        this.pinchZooming = false;
+        this.lastPinchDistance = null;
+        this.input.on('pointermove', (pointer) => {
+            if (pointer.pointers && pointer.pointers.length === 2) {
+                const [p1, p2] = pointer.pointers;
+                if (p1 && p2) {
+                    const dx = p1.x - p2.x;
+                    const dy = p1.y - p2.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (this.lastPinchDistance !== null) {
+                        let zoomChange = (dist - this.lastPinchDistance) * 0.005;
+                        let newZoom = Phaser.Math.Clamp(this.cameras.main.zoom + zoomChange, this.minZoom, this.maxZoom);
+                        this.cameras.main.setZoom(newZoom);
+                    }
+                    this.lastPinchDistance = dist;
+                    this.pinchZooming = true;
+                }
+            } else {
+                this.lastPinchDistance = null;
+                this.pinchZooming = false;
+            }
+        });
+
+        // Add UI container to scene and ignore it in the main camera
+        this.add.existing(this.uiContainer);
+        this.cameras.main.ignore(this.uiContainer);
     }
 
     update(time, delta) {
-        this.fpsText.setText(`FPS: ${Math.floor(this.game.loop.actualFps)}`);
+        // Clamp camera zoom
+        if (this.cameras.main.zoom < this.minZoom) this.cameras.main.setZoom(this.minZoom);
+        if (this.cameras.main.zoom > this.maxZoom) this.cameras.main.setZoom(this.maxZoom);
+
+        // Update FPS overlay
+        if (this.fpsOverlay) {
+            this.fpsOverlay.textContent = `FPS: ${Math.floor(this.game.loop.actualFps)}`;
+        }
 
         const alphaStep = delta / (1000 / 30); // Fixed to match server's 30Hz
 
@@ -279,7 +287,6 @@ export class MainScene extends Scene {
             }
             const midX = sumX / playerCells.length;
             const midY = sumY / playerCells.length;
-            
             // Smooth camera following
             this.cameras.main.pan(midX, midY, 100, 'Linear', true);
         }

@@ -170,6 +170,66 @@ body {
     transform: translateX(-50%) translateY(-2px);
 }
 
+#ui-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 10010;
+}
+#fps-overlay {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font: 16px Courier, monospace;
+    color: #00ff00;
+    background: #000;
+    padding: 4px 8px;
+    border-radius: 4px;
+    opacity: 0.85;
+    pointer-events: none;
+}
+#username-overlay {
+    position: absolute;
+    top: 38px;
+    left: 10px;
+    font: 14px Arial, sans-serif;
+    color: #fff;
+    background: #000;
+    padding: 4px 8px;
+    border-radius: 4px;
+    opacity: 0.85;
+    pointer-events: none;
+}
+#split-indicator-overlay {
+    position: absolute;
+    top: 66px;
+    left: 10px;
+    font: 12px Arial, sans-serif;
+    color: #00ff00;
+    background: #000;
+    padding: 4px 8px;
+    border-radius: 4px;
+    opacity: 0.85;
+    pointer-events: none;
+    display: none;
+}
+#leaderboard-overlay {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    font: 16px Arial, sans-serif;
+    color: #222;
+    background: rgba(255,255,255,0.85);
+    padding: 8px 16px;
+    border-radius: 8px;
+    text-align: left;
+    min-width: 120px;
+    pointer-events: none;
+}
+
 @media (max-width: 600px) {
     body {
         min-height: 100vh;
@@ -219,5 +279,13 @@ body {
     #respawn-button {
         font-size: 1.2rem;
         padding: 0.7rem 1.2rem;
+    }
+    #fps-overlay, #username-overlay, #split-indicator-overlay, #leaderboard-overlay {
+        font-size: 13px;
+        padding: 3px 6px;
+    }
+    #leaderboard-overlay {
+        min-width: 80px;
+        padding: 6px 8px;
     }
 }
